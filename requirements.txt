@@ -1,8 +1,7 @@
-streamlit
-pandas
-numpy
-plotly.express
-datetime
-scipy.cluster.hierarchy
-matplotlib
-wordcloud
+streamlit==1.25.0
+pandas==1.5.3
+numpy==1.25.1
+plotly==5.15.0
+scipy==1.11.1
+matplotlib==3.7.2
+wordcloud==1.9.2
