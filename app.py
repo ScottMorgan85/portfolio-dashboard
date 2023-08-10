@@ -7,6 +7,8 @@ from scipy.cluster.hierarchy import linkage, dendrogram
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 
+# Constants
+RISK_FREE_RATE = 0.02  # Assuming a risk-free rate of 2% for Sharpe/Treynor calculation
 
 
 # Sample data
@@ -22,8 +24,33 @@ ASSET_VALUES = np.random.rand(len(DATE_RANGE), 5) * 1000
 NEWS_ITEMS = ["Positive news about Apple", "Google faces regulatory challenges", "Amazon grows in Europe", "Facebook under scrutiny", "Microsoft announces new partnership"]
 SENTIMENTS = ['positive', 'neutral', 'negative']
 
+def convert_to_cumulative_returns(values):
+    returns = (values[1:] - values[:-1]) / values[:-1]
+    cum_returns = np.cumsum(returns, axis=0)
+    return np.vstack([[0]*values.shape[1], cum_returns]) * 100
+
+def calculate_statistics(values, periods=[252, 252*3]):
+    daily_returns = (values[1:] - values[:-1]) / values[:-1]
+    statistics = {}
+
+    for period in periods:
+        returns = (values[-1] - values[-period]) / values[-period]
+        std_dev = daily_returns[-period:].std()
+        sharpe = (returns - RISK_FREE_RATE) / std_dev
+        # For simplicity, using returns as proxy for beta in Treynor
+        treynor = (returns - RISK_FREE_RATE) / returns
+        statistics[period] = (returns, std_dev, sharpe, treynor)
+
+    return statistics
+
 # Streamlit app
 st.title("Portfolio Insights Dashboard")
+
+st.markdown("""
+    <div style="color: red; font-size: 14px; font-style: italic;">
+        All Figures, Including Stock Prices, Are Hypothetical And For Illustrative Purposes Only
+    </div>
+""", unsafe_allow_html=True)
 
 portfolio_selected = st.sidebar.selectbox('Select a Portfolio:', list(PORTFOLIOS.keys()))
 date_range = st.sidebar.date_input('Select date range:', [DATE_RANGE[0], DATE_RANGE[-1]])
@@ -53,9 +80,17 @@ if tab_selected == "Asset Overview":
     st.write(asset_df)
 
 elif tab_selected == "Historical Performance":
-    historical_df = pd.DataFrame(ASSET_VALUES, index=DATE_RANGE, columns=PORTFOLIOS[portfolio_selected])
-    fig_line = px.line(historical_df, x=historical_df.index, y=PORTFOLIOS[portfolio_selected], title='Historical Performance')
+    # Select the stock to visualize
+    stock_to_display = st.selectbox('Select Stock for Historical Performance:', PORTFOLIOS[portfolio_selected], index=0)
+
+    historical_cumulative_returns = convert_to_cumulative_returns(ASSET_VALUES)
+    historical_df = pd.DataFrame(historical_cumulative_returns, index=DATE_RANGE, columns=PORTFOLIOS[portfolio_selected])
+
+    fig_line = px.line(historical_df, x=historical_df.index, y=stock_to_display, title=f'Historical Performance for {stock_to_display} based on Cumulative Returns')
+    # fig_line.update_layout(yaxis_tickformat='%')  # Format Y-axis as percentage
+
     st.plotly_chart(fig_line)
+
 
 elif tab_selected == "Sentiment Analysis":
     st.subheader("Recent News")
@@ -102,32 +137,39 @@ elif tab_selected == "Sentiment Analysis":
     st.pyplot(fig)
 
 elif tab_selected == "Predictive Forecasting":
-    st.subheader("Predictive Forecasting for the Next Month")
+    st.subheader("Predictive Forecasting for the Next Month based on Cumulative Returns")
+    
+    # Select the stock to visualize
+    stock_to_display = st.selectbox('Select Stock for Forecasting:', PORTFOLIOS[portfolio_selected], index=0)
 
     # Generate a simple random walk forecast for demonstration purposes
     forecast_length = 20  # 20 business days ~ 1 month
-    last_value = ASSET_VALUES[-1]
+    last_cumulative_return = convert_to_cumulative_returns(ASSET_VALUES)[-1]
 
     random_walk = np.random.randn(forecast_length, 5) * 10
     cumulative_random_walk = np.cumsum(random_walk, axis=0)
-    forecast_values = last_value + cumulative_random_walk
+    forecast_cumulative_returns = last_cumulative_return + cumulative_random_walk
 
-    # Append forecast to historical data for visualization
+    # Append forecast to historical cumulative returns for visualization
     # Get the next 20 business days after the last DATE_RANGE entry
+    historical_cumulative_returns = convert_to_cumulative_returns(ASSET_VALUES)
     next_business_days = pd.bdate_range(DATE_RANGE[-1] + timedelta(days=1), periods=forecast_length)
     all_dates = DATE_RANGE.union(next_business_days)
-    all_values = np.vstack([ASSET_VALUES, forecast_values])
+    all_cumulative_returns = np.vstack([historical_cumulative_returns, forecast_cumulative_returns])
 
-    forecast_df = pd.DataFrame(all_values, index=all_dates, columns=PORTFOLIOS[portfolio_selected])
+    forecast_df = pd.DataFrame(all_cumulative_returns, index=all_dates, columns=PORTFOLIOS[portfolio_selected])
 
-    fig_forecast = px.line(forecast_df, x=forecast_df.index, y=PORTFOLIOS[portfolio_selected], title='Predictive Forecasting')
+    fig_forecast = px.line(forecast_df, x=forecast_df.index, y=stock_to_display, title=f'Predictive Forecasting for {stock_to_display} based on Cumulative Returns')
     
     # Highlight the forecasted area
     fig_forecast.add_vrect(x0=DATE_RANGE[-1], x1=next_business_days[-1], fillcolor="LightSalmon", opacity=0.5, layer="below", line_width=0)
 
     st.plotly_chart(fig_forecast)
 
-    st.write("Note: The shaded region represents the forecasted values for the next month. This forecasting is based on a simple random walk for demonstration purposes and is not suitable for actual financial predictions.")
+    st.write(f"Note: The shaded region represents the forecasted cumulative returns for the next month for {stock_to_display}. This forecasting is based on a simple random walk for demonstration purposes and is not suitable for actual financial predictions.")
+
+
+
 
 elif tab_selected == "Portfolio Optimization":
     st.subheader("Hierarchical Risk Parity Portfolio Optimization")
